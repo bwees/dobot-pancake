@@ -11,14 +11,18 @@ CON_STR = {
 api = dType.load()
 #建立与dobot的连接
 #Connect Dobot
-state = dType.ConnectDobot(api, "", 115200)[0]
+state = dType.ConnectDobot(api, "COM3", 115200)[0]
 print("Connect status:",CON_STR[state])
 
 if (state == dType.DobotConnect.DobotConnect_NoError):
     
     #清空队列
     #Clean Command Queued
+    dType.SetHOMECmd(api, 0)
+
     dType.SetQueuedCmdClear(api)
+    dType.ClearAllAlarmsState(api)
+
     
     #设置运动参数
     #Async Motion Params Setting
@@ -28,7 +32,7 @@ if (state == dType.DobotConnect.DobotConnect_NoError):
 
     #回零
     #Async Home
-    dType.SetHOMECmd(api, temp = 0, isQueued = 1)
+    # dType.SetHOMECmd(api, temp = 0, isQueued = 1)
 
     #设置ptpcmd内容并将命令发送给dobot
     #Async PTP Motion
