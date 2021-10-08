@@ -12,9 +12,9 @@ CON_STR = {
 }
 
 api = dType.load()
-# state = dType.ConnectDobot(api, "COM3", 115200)[0]
-# print("Connect status:", CON_STR[state])
-# dType.ClearAllAlarmsState(api)
+state = dType.ConnectDobot(api, "COM3", 115200)[0]
+print("Connect status:", CON_STR[state])
+dType.ClearAllAlarmsState(api)
 
 home_offset = [100, -60, 0]
 
@@ -50,7 +50,6 @@ class Feedrate:
         self.feed = feed
 
     def execute(self):
-        print("set", self.feed)
         return dType.SetPTPJointParams(api, self.feed, 10000, self.feed, 10000, self.feed, 10000, self.feed, 10000, isQueued=1)[0]
 
 class Wait:
@@ -103,6 +102,7 @@ def load_gcode_commands(filename):
                     commandList.append(Move(x, y))
                 except KeyError:
                     pass
+                
     # Return last index of queue
     commandList.append(PumpDisable())
 
