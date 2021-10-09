@@ -1,9 +1,11 @@
 from pygcode import Line, Machine
 from pygcode import GCodeDwell, GCodeLinearMove
+from pygcode import gcodes
 from pygcode.gcodes import GCodeFeedRate, GCodeRapidMove
 from dobot import DobotDllType as dType
 from tqdm import tqdm
 import time
+import turtle
 
 CON_STR = {
     dType.DobotConnect.DobotConnect_NoError:  "DobotConnect_NoError",
@@ -14,7 +16,6 @@ CON_STR = {
 api = dType.load()
 state = dType.ConnectDobot(api, "COM3", 115200)[0]
 print("Connect status:", CON_STR[state])
-dType.ClearAllAlarmsState(api)
 
 home_offset = [100, -60, 0]
 
@@ -58,6 +59,14 @@ class Wait:
 
     def execute(self):
         return dType.SetWAITCmd(api, self.ms, isQueued=1)[0]
+
+class SetIO:
+    def __init__(self, port, level):
+        self.port = port
+        self.level = level
+
+    def execute(self):
+        dType.SetIODO(api, self.port, self.level, isQueued=1)
 
 
 def load_gcode_commands(filename):
@@ -137,11 +146,34 @@ def executeQueue(queue):
 
 def showPlot(commands):
     extruding = False
-    for c in commands:
+
+    plot = turtle.Turtle()
+    turtle.color("red")
+
+    last_pt = None
+    i = -1
+    for x, c in enumerate(commands):
+        if type(c) == Move:
+            last_pt = c
+            i = x
+            break
+
+    turtle.penup()
+    turtle.goto(last_pt.x, last_pt.y)
+    for c in commands[i+1:]:
         if type(c) == PumpOff or type(c) == PumpDisable:
             extruding = False
+            turtle.penup()
+            continue
         if type(c) == PumpOn:
-            extruding = True        
+            extruding = True 
+            turtle.pendown()   
+            continue
+        
+        if type(c) == Move:
+            turtle.goto(c.x, -c.y)
+
+    turtle.done()
 
 def homeRobot():
     dType.SetHOMECmd(api, 0)
@@ -164,7 +196,12 @@ def homeRobot():
     print("Done Homing")
 
 def main():
-    commands = load_gcode_commands("pancake.gcode")
+
+    queue = load_gcode_commands("pancake.gcode")
+    showPlot(queue)
+
+    if state == dType.DobotConnect.DobotConnect_Occupied:
+        return 
 
     ####### STARTUP #######
     dType.ClearAllAlarmsState(api)
@@ -187,6 +224,7 @@ def main():
     print("Printing Pancake...")
     executeQueue(commands)
 
+
+    dType.DisconnectDobot(api)
+
 main()
-dType.DisconnectDobot(api)
-dType.SetQueuedCmdClear(api)
