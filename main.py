@@ -14,44 +14,60 @@ CON_STR = {
 }
 
 api = dType.load()
-state = dType.ConnectDobot(api, "COM3", 115200)[0]
+state = dType.ConnectDobot(api, "COM4", 115200)[0]
 print("Connect status:", CON_STR[state])
 
-home_offset = [100, -60, 0]
-
-def tool_change(tool):
-    pass
+gcode_offset = [-43, 0, 0]
+griddle_home = [45, 75, 75]
 
 class Home:
     def execute(self):
         return dType.SetHOMECmd(api, 0, isQueued=1)[0]
 
+    def __repr__(self):
+        return "<HOME>"
+
 class PumpOn:
     def execute(self):
         return dType.SetEndEffectorGripper(api, True, False, isQueued=1)[0]
 
+    def __repr__(self):
+        return "<PUMP_ON>"
+
 class PumpOff:
     def execute(self):
         return dType.SetEndEffectorGripper(api, False, False, isQueued=1)[0]
+    
+    def __repr__(self):
+        return "<PUMP_OFF>"
 
 class PumpDisable:
     def execute(self):
         return dType.SetEndEffectorGripper(api, False, False, isQueued=1)[0]
 
+    def __repr__(self):
+        return "<PUMP_DISABLE>"
+
 class Move:
     def __init__(self, x, y):
-        self.x = home_offset[0] + x
-        self.y = home_offset[1] + y
+        self.x = griddle_home[0] + x
+        self.y = griddle_home[1] + y
 
     def execute(self):
-        return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, self.x, self.y, home_offset[2], 0, isQueued=1)[0]
+        return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, self.x, self.y, griddle_home[2], 0, isQueued=1)[0]
+
+    def __repr__(self):
+        return "<MOVE x=" + str(self.x) + " y=" + str(self.y) + ">"
 
 class Feedrate:
     def __init__(self, feed):
-        self.feed = feed
+        self.feed = feed*60
 
     def execute(self):
-        return dType.SetPTPJointParams(api, self.feed, 10000, self.feed, 10000, self.feed, 10000, self.feed, 10000, isQueued=1)[0]
+        return dType.SetPTPJointParams(api, 300, 4000, 300, 4000, 300, 4000, 300, 4000, 1)[0]
+
+    def __repr__(self):
+        return "<FEEDRATE feed=" + str(self.feed) + ">"
 
 class Wait:
     def __init__(self, ms):
@@ -59,6 +75,18 @@ class Wait:
 
     def execute(self):
         return dType.SetWAITCmd(api, self.ms, isQueued=1)[0]
+
+    def __repr__(self):
+        return "<WAIT ms=" + str(self.ms) + ">"
+
+    def __add__(self, other):
+        return Wait(self.ms + other.ms)
+
+    def __radd__(self, other):
+        if other == 0:
+            return self
+        else:
+            return self.__add__(other)
 
 class SetIO:
     def __init__(self, port, level):
@@ -68,6 +96,8 @@ class SetIO:
     def execute(self):
         dType.SetIODO(api, self.port, self.level, isQueued=1)
 
+    def __repr__(self):
+        return "<SETIO port=" + str(self.port) + " level=" + + str(self.level) + ">"
 
 def load_gcode_commands(filename):
     gfile = open(filename)
@@ -92,6 +122,9 @@ def load_gcode_commands(filename):
             commandList.append(PumpOff())
             continue
 
+        if "Help homing" in line:
+            continue
+
         gcodeLine = Line(line).block.gcodes
         if len(gcodeLine) > 0:
             if type(gcodeLine[0]) == GCodeDwell:
@@ -106,8 +139,9 @@ def load_gcode_commands(filename):
 
             if type(gcodeLine[0]) == GCodeRapidMove:
                 try:
-                    x = gcodeLine[0].get_param_dict()["X"]
-                    y = gcodeLine[0].get_param_dict()["Y"]
+                    x = gcodeLine[0].get_param_dict()["X"] + gcode_offset[0]
+                    y = gcodeLine[0].get_param_dict()["Y"] + gcode_offset[1]
+
                     commandList.append(Move(x, y))
                 except KeyError:
                     pass
@@ -125,31 +159,45 @@ def chunks(l, n):
 
 def executeQueue(queue):
 
-    chunk_size = 10
+    chunk_size = 100
     chunk_set = chunks(queue, chunk_size)
+
+    cmdList = [] 
 
     for c in chunk_set:
         toIndex = -1
 
         for op in c:
             toIndex = op.execute()
+            print(op)
 
         dType.SetQueuedCmdStartExec(api)
+        lastIndex =  dType.GetQueuedCmdCurrentIndex(api)[0]
+        lastTime = time.time()
 
         while toIndex > dType.GetQueuedCmdCurrentIndex(api)[0]:
-            dType.dSleep(100)
+            # if dType.GetQueuedCmdCurrentIndex(api)[0] != lastIndex:
+            #     lastIndex = dType.GetQueuedCmdCurrentIndex(api)[0]
+            #     cmdList.append([c[lastIndex], time.time()-lastTime])
+            #     lastTime = time.time()
+
+            time.sleep(0.01)
             
         dType.SetQueuedCmdStopExec(api)
         dType.SetQueuedCmdClear(api)
 
+    with open("timings.txt", "w+") as out:
+        out.write(str(cmdList))
+
     dType.SetQueuedCmdClear(api)
 
 def showPlot(commands):
-    extruding = False
 
-    plot = turtle.Turtle()
+    turtle.tracer(0, 0)
     turtle.color("red")
 
+
+    # Find first movement point
     last_pt = None
     i = -1
     for x, c in enumerate(commands):
@@ -162,18 +210,16 @@ def showPlot(commands):
     turtle.goto(last_pt.x, last_pt.y)
     for c in commands[i+1:]:
         if type(c) == PumpOff or type(c) == PumpDisable:
-            extruding = False
             turtle.penup()
             continue
         if type(c) == PumpOn:
-            extruding = True 
             turtle.pendown()   
             continue
         
         if type(c) == Move:
             turtle.goto(c.x, -c.y)
 
-    turtle.done()
+    turtle.update()
 
 def homeRobot():
     dType.SetHOMECmd(api, 0)
@@ -195,22 +241,30 @@ def homeRobot():
     dType.SetQueuedCmdStopExec(api)
     print("Done Homing")
 
-def main():
+def estimateTime(commands):
+    totalWait = sum([x for x in commands if type(x)==Wait]).ms
+    movementTimes = []
 
-    queue = load_gcode_commands("pancake.gcode")
-    showPlot(queue)
+    return totalWait + sum(movementTimes)
+
+def main():
+    commands = load_gcode_commands("pancake.gcode")
+    print(commands[:10])
+    
+    # showPlot(commands)
+
+    dType.ClearAllAlarmsState(api)
 
     if state == dType.DobotConnect.DobotConnect_Occupied:
         return 
 
     ####### STARTUP #######
-    dType.ClearAllAlarmsState(api)
     dType.SetQueuedCmdClear(api)
+    dType.ClearAllAlarmsState(api)
     executeQueue([PumpDisable()])
 
     dType.SetHOMEParams(api, 200, 200, 200, 200, 1)
-    dType.SetPTPJointParams(api, 200, 200, 200, 200, 200, 200, 200, 200, 1)
-    dType.SetPTPCommonParams(api, 100, 100, 1)
+    dType.SetPTPJointParams(api, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 1)
 
     homeRobot()
 
@@ -222,8 +276,8 @@ def main():
     commands = load_gcode_commands("pancake.gcode")
     showPlot(commands)
     print("Printing Pancake...")
+    print("Estimated Print Time:", estimateTime(commands))
     executeQueue(commands)
-
 
     dType.DisconnectDobot(api)
 
