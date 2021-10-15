@@ -18,7 +18,7 @@ state = dType.ConnectDobot(api, "COM4", 115200)[0]
 print("Connect status:", CON_STR[state])
 
 gcode_offset = [-43, 0, 0]
-griddle_home = [45, 75, 75]
+griddle_home = [100, 100, 75]
 
 class Home:
     def execute(self):
@@ -64,7 +64,7 @@ class Feedrate:
         self.feed = feed*60
 
     def execute(self):
-        return dType.SetPTPJointParams(api, 300, 4000, 300, 4000, 300, 4000, 300, 4000, 1)[0]
+        return dType.SetPTPJointParams(api, 300, 200, 300, 200, 300, 200, 300, 200, 1)[0]
 
     def __repr__(self):
         return "<FEEDRATE feed=" + str(self.feed) + ">"
@@ -130,12 +130,12 @@ def load_gcode_commands(filename):
             if type(gcodeLine[0]) == GCodeDwell:
                 # Set Robot Delay
                 wait = gcodeLine[0].get_param_dict("P")["P"]
-                commandList.append(Wait(wait))
+                # commandList.append(Wait(wait))
 
-            if len(gcodeLine) > 1 and type(gcodeLine[1]) == GCodeFeedRate:
+            # if len(gcodeLine) > 1 and type(gcodeLine[1]) == GCodeFeedRate:
 
-                feed = int(str(gcodeLine[1])[1:])/60
-                commandList.append(Feedrate(feed))
+                # feed = int(str(gcodeLine[1])[1:])/60
+                # commandList.append(Feedrate(feed))
 
             if type(gcodeLine[0]) == GCodeRapidMove:
                 try:
@@ -159,7 +159,7 @@ def chunks(l, n):
 
 def executeQueue(queue):
 
-    chunk_size = 100
+    chunk_size = 25
     chunk_set = chunks(queue, chunk_size)
 
     cmdList = [] 
@@ -172,22 +172,17 @@ def executeQueue(queue):
             print(op)
 
         dType.SetQueuedCmdStartExec(api)
-        lastIndex =  dType.GetQueuedCmdCurrentIndex(api)[0]
-        lastTime = time.time()
-
+        
         while toIndex > dType.GetQueuedCmdCurrentIndex(api)[0]:
             # if dType.GetQueuedCmdCurrentIndex(api)[0] != lastIndex:
             #     lastIndex = dType.GetQueuedCmdCurrentIndex(api)[0]
             #     cmdList.append([c[lastIndex], time.time()-lastTime])
             #     lastTime = time.time()
 
-            time.sleep(0.01)
+            time.sleep(0.1)
             
         dType.SetQueuedCmdStopExec(api)
         dType.SetQueuedCmdClear(api)
-
-    with open("timings.txt", "w+") as out:
-        out.write(str(cmdList))
 
     dType.SetQueuedCmdClear(api)
 
@@ -239,19 +234,11 @@ def homeRobot():
         time.sleep(0.1)
 
     dType.SetQueuedCmdStopExec(api)
+    dType.SetQueuedCmdClear(api)
     print("Done Homing")
 
-def estimateTime(commands):
-    totalWait = sum([x for x in commands if type(x)==Wait]).ms
-    movementTimes = []
-
-    return totalWait + sum(movementTimes)
 
 def main():
-    commands = load_gcode_commands("pancake.gcode")
-    print(commands[:10])
-    
-    # showPlot(commands)
 
     dType.ClearAllAlarmsState(api)
 
@@ -264,7 +251,7 @@ def main():
     executeQueue([PumpDisable()])
 
     dType.SetHOMEParams(api, 200, 200, 200, 200, 1)
-    dType.SetPTPJointParams(api, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 1)
+    # dType.SetPTPJointParams(api, 200, 200, 200, 200, 200, 200, 200, 200, 1)
 
     homeRobot()
 
@@ -274,9 +261,8 @@ def main():
     ########################
 
     commands = load_gcode_commands("pancake.gcode")
-    showPlot(commands)
+    # showPlot(commands)
     print("Printing Pancake...")
-    print("Estimated Print Time:", estimateTime(commands))
     executeQueue(commands)
 
     dType.DisconnectDobot(api)
