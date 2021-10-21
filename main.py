@@ -1,11 +1,10 @@
-from pygcode import Line, Machine
-from pygcode import GCodeDwell, GCodeLinearMove
-from pygcode import gcodes
-from pygcode.gcodes import GCodeFeedRate, GCodeRapidMove
+from pygcode import Line, GCodeDwell
+from pygcode.gcodes import GCodeRapidMove
 from dobot import DobotDllType as dType
 from tqdm import tqdm
 import time
 import turtle
+import sys
 
 CON_STR = {
     dType.DobotConnect.DobotConnect_NoError:  "DobotConnect_NoError",
@@ -18,7 +17,7 @@ state = dType.ConnectDobot(api, "COM4", 115200)[0]
 print("Connect status:", CON_STR[state])
 
 gcode_offset = [-43, 0, 0]
-griddle_home = [100, 100, 75]
+griddle_home = [200, 50, 75]
 
 class Home:
     def execute(self):
@@ -36,14 +35,14 @@ class PumpOn:
 
 class PumpOff:
     def execute(self):
-        return dType.SetEndEffectorGripper(api, False, False, isQueued=1)[0]
+        return dType.SetEndEffectorGripper(api, True, True, isQueued=1)[0]
     
     def __repr__(self):
         return "<PUMP_OFF>"
 
 class PumpDisable:
     def execute(self):
-        return dType.SetEndEffectorGripper(api, False, False, isQueued=1)[0]
+        return dType.SetEndEffectorGripper(api, True, True, isQueued=1)[0]
 
     def __repr__(self):
         return "<PUMP_DISABLE>"
@@ -130,19 +129,14 @@ def load_gcode_commands(filename):
             if type(gcodeLine[0]) == GCodeDwell:
                 # Set Robot Delay
                 wait = gcodeLine[0].get_param_dict("P")["P"]
-                # commandList.append(Wait(wait))
-
-            # if len(gcodeLine) > 1 and type(gcodeLine[1]) == GCodeFeedRate:
-
-                # feed = int(str(gcodeLine[1])[1:])/60
-                # commandList.append(Feedrate(feed))
+                commandList.append(Wait(wait))
 
             if type(gcodeLine[0]) == GCodeRapidMove:
                 try:
                     x = gcodeLine[0].get_param_dict()["X"] + gcode_offset[0]
                     y = gcodeLine[0].get_param_dict()["Y"] + gcode_offset[1]
 
-                    commandList.append(Move(x, y))
+                    commandList.append(Move(y, x))
                 except KeyError:
                     pass
                 
@@ -162,8 +156,6 @@ def executeQueue(queue):
     chunk_size = 25
     chunk_set = chunks(queue, chunk_size)
 
-    cmdList = [] 
-
     for c in chunk_set:
         toIndex = -1
 
@@ -174,11 +166,6 @@ def executeQueue(queue):
         dType.SetQueuedCmdStartExec(api)
         
         while toIndex > dType.GetQueuedCmdCurrentIndex(api)[0]:
-            # if dType.GetQueuedCmdCurrentIndex(api)[0] != lastIndex:
-            #     lastIndex = dType.GetQueuedCmdCurrentIndex(api)[0]
-            #     cmdList.append([c[lastIndex], time.time()-lastTime])
-            #     lastTime = time.time()
-
             time.sleep(0.1)
             
         dType.SetQueuedCmdStopExec(api)
@@ -248,7 +235,7 @@ def main():
     ####### STARTUP #######
     dType.SetQueuedCmdClear(api)
     dType.ClearAllAlarmsState(api)
-    executeQueue([PumpDisable()])
+    executeQueue([PumpOff()])
 
     dType.SetHOMEParams(api, 200, 200, 200, 200, 1)
     # dType.SetPTPJointParams(api, 200, 200, 200, 200, 200, 200, 200, 200, 1)
@@ -260,10 +247,19 @@ def main():
 
     ########################
 
-    commands = load_gcode_commands("pancake.gcode")
-    # showPlot(commands)
-    print("Printing Pancake...")
-    executeQueue(commands)
+    try:
+        commands = load_gcode_commands(sys.argv[1])
+
+        # showPlot(commands)
+        print("Printing Pancake...")
+        executeQueue(commands)
+
+    except IndexError:
+        print("Please provide a file to print!")
+        
+    except FileNotFoundError:
+        print("Inputted file was not found")
+    
 
     dType.DisconnectDobot(api)
 
