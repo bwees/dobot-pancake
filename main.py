@@ -16,8 +16,54 @@ api = dType.load()
 state = dType.ConnectDobot(api, "COM4", 115200)[0]
 print("Connect status:", CON_STR[state])
 
+print(sys.argv)
+
 gcode_offset = [-43, 0, 0]
-griddle_home = [200, 50, 75]
+griddle_home = [200, -25, 35]
+
+class PancakePlot:
+    def __init__(self, commands):
+        self.commands = commands
+        self.currentIndex = 0
+        self.plot()
+
+    def plot(self):
+        turtle.tracer(0, 0)
+        turtle.color("green")
+        turtle.penup()
+        
+        for c in self.commands[:self.currentIndex]:
+            if type(c) == PumpOff or type(c) == PumpDisable:
+                turtle.penup()
+                continue
+            if type(c) == PumpOn:
+                turtle.pendown()   
+                continue
+            
+            if type(c) == Move:
+                turtle.goto(c.x, -c.y)
+        
+        turtle.color("red")
+        for c in self.commands[self.currentIndex:]:
+            if type(c) == PumpOff or type(c) == PumpDisable:
+                turtle.penup()
+                continue
+            if type(c) == PumpOn:
+                turtle.pendown()   
+                continue
+            
+            if type(c) == Move:
+                turtle.goto(c.x, -c.y)
+
+        turtle.update()
+
+    def next(self):
+        self.currentIndex += 1
+        self.plot()
+
+    def setIndex(self, index):
+        self.currentIndex = index
+        self.plot()
 
 class Home:
     def execute(self):
@@ -48,12 +94,13 @@ class PumpDisable:
         return "<PUMP_DISABLE>"
 
 class Move:
-    def __init__(self, x, y):
+    def __init__(self, x, y, z=griddle_home[2]):
         self.x = griddle_home[0] + x
         self.y = griddle_home[1] + y
+        self.z = z
 
     def execute(self):
-        return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, self.x, self.y, griddle_home[2], 0, isQueued=1)[0]
+        return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, self.x, self.y, self.z, 0, isQueued=1)[0]
 
     def __repr__(self):
         return "<MOVE x=" + str(self.x) + " y=" + str(self.y) + ">"
@@ -63,7 +110,7 @@ class Feedrate:
         self.feed = feed*60
 
     def execute(self):
-        return dType.SetPTPJointParams(api, 300, 200, 300, 200, 300, 200, 300, 200, 1)[0]
+        return dType.SetPTPJointParams(api, 200, 400, 200, 400, 200, 400, 200, 400, 1)[0]
 
     def __repr__(self):
         return "<FEEDRATE feed=" + str(self.feed) + ">"
@@ -147,11 +194,15 @@ def load_gcode_commands(filename):
 
     return commandList
 
+# chuck list into n chunks
 def chunks(l, n):
-    n = max(1, n)
-    return (l[i:i+n] for i in range(0, len(l), n))
+    for i in range(0, len(l), n):
+        yield l[i:i+n]
 
-def executeQueue(queue):
+def executeQueue(queue, plot=False):
+
+    if plot:
+        commandPlot = PancakePlot(queue)
 
     chunk_size = 25
     chunk_set = chunks(queue, chunk_size)
@@ -161,47 +212,26 @@ def executeQueue(queue):
 
         for op in c:
             toIndex = op.execute()
-            print(op)
 
         dType.SetQueuedCmdStartExec(api)
-        
+
+        if plot:
+            initial = dType.GetQueuedCmdCurrentIndex(api)[0]
+            orig = commandPlot.currentIndex
+            commandPlot.next()
+
+
         while toIndex > dType.GetQueuedCmdCurrentIndex(api)[0]:
-            time.sleep(0.1)
-            
+            if plot:
+                commandPlot.setIndex(orig+(dType.GetQueuedCmdCurrentIndex(api)[0]-initial))
+                    
+            time.sleep(0.2)
+        if plot:
+            commandPlot.next()
         dType.SetQueuedCmdStopExec(api)
         dType.SetQueuedCmdClear(api)
 
     dType.SetQueuedCmdClear(api)
-
-def showPlot(commands):
-
-    turtle.tracer(0, 0)
-    turtle.color("red")
-
-
-    # Find first movement point
-    last_pt = None
-    i = -1
-    for x, c in enumerate(commands):
-        if type(c) == Move:
-            last_pt = c
-            i = x
-            break
-
-    turtle.penup()
-    turtle.goto(last_pt.x, last_pt.y)
-    for c in commands[i+1:]:
-        if type(c) == PumpOff or type(c) == PumpDisable:
-            turtle.penup()
-            continue
-        if type(c) == PumpOn:
-            turtle.pendown()   
-            continue
-        
-        if type(c) == Move:
-            turtle.goto(c.x, -c.y)
-
-    turtle.update()
 
 def homeRobot():
     dType.SetHOMECmd(api, 0)
@@ -238,21 +268,23 @@ def main():
     executeQueue([PumpOff()])
 
     dType.SetHOMEParams(api, 200, 200, 200, 200, 1)
-    # dType.SetPTPJointParams(api, 200, 200, 200, 200, 200, 200, 200, 200, 1)
 
-    homeRobot()
-
-    # Go to griddle home position
-    executeQueue([Move(0,0)])
-
-    ########################
+    if "-h" in sys.argv:
+        homeRobot()
 
     try:
         commands = load_gcode_commands(sys.argv[1])
 
         # showPlot(commands)
         print("Printing Pancake...")
-        executeQueue(commands)
+        executeQueue(commands, plot=True)
+        executeQueue([Move(100-200, -150-25, 100)])
+
+        print("Pancake Cook Time: 1.75 minutes")
+        time.sleep(60*1.75)
+
+        # signal for pancake to be flipped
+        dType.SetIODOEx(api, 13, 1, 1)
 
     except IndexError:
         print("Please provide a file to print!")
