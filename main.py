@@ -16,15 +16,15 @@ api = dType.load()
 state = dType.ConnectDobot(api, "COM4", 115200)[0]
 print("Connect status:", CON_STR[state])
 
-print(sys.argv)
-
 gcode_offset = [-43, 0, 0]
 griddle_home = [200, -25, 35]
 
 class PancakePlot:
-    def __init__(self, commands):
+    def __init__(self, commands, x_offset=0, y_offset=0):
         self.commands = commands
         self.currentIndex = 0
+        self.x_offset = x_offset
+        self.y_offset = y_offset
         self.plot()
 
     def plot(self):
@@ -41,7 +41,7 @@ class PancakePlot:
                 continue
             
             if type(c) == Move:
-                turtle.goto(c.x, -c.y)
+                turtle.goto(c.x+self.x_offset, -c.y+self.y_offset)
         
         turtle.color("red")
         for c in self.commands[self.currentIndex:]:
@@ -53,7 +53,7 @@ class PancakePlot:
                 continue
             
             if type(c) == Move:
-                turtle.goto(c.x, -c.y)
+                turtle.goto(c.x+self.x_offset, -c.y+self.y_offset)
 
         turtle.update()
 
@@ -140,7 +140,7 @@ class SetIO:
         self.level = level
 
     def execute(self):
-        dType.SetIODO(api, self.port, self.level, isQueued=1)
+        dType.SetIODOEx(api, self.port, self.level, isQueued=1)
 
     def __repr__(self):
         return "<SETIO port=" + str(self.port) + " level=" + + str(self.level) + ">"
@@ -233,6 +233,7 @@ def executeQueue(queue, plot=False):
 
     dType.SetQueuedCmdClear(api)
 
+# This should not be this hard -_-
 def homeRobot():
     dType.SetHOMECmd(api, 0)
 
@@ -254,6 +255,19 @@ def homeRobot():
     dType.SetQueuedCmdClear(api)
     print("Done Homing")
 
+def pamSpray(length):
+    executeQueue([
+        SetIO(17, 1),
+        Wait(length),
+        SetIO(17, 0)
+    ])
+    
+def flipPancake():
+    executeQueue([
+        SetIO(13, 1),
+        Wait(1000),
+        SetIO(13, 0)
+    ])
 
 def main():
 
@@ -272,19 +286,24 @@ def main():
     if "-h" in sys.argv:
         homeRobot()
 
+    if "-p" in sys.argv:
+        pamSpray(300)
+
     try:
-        commands = load_gcode_commands(sys.argv[1])
+        # grab last command line argument for filename
+        commands = load_gcode_commands(sys.argv[-1])
 
         # showPlot(commands)
         print("Printing Pancake...")
         executeQueue(commands, plot=True)
+
+        # Park robot out of way griddle
         executeQueue([Move(100-200, -150-25, 100)])
 
         print("Pancake Cook Time: 1.75 minutes")
         time.sleep(60*1.75)
 
-        # signal for pancake to be flipped
-        dType.SetIODOEx(api, 13, 1, 1)
+        flipPancake()
 
     except IndexError:
         print("Please provide a file to print!")
