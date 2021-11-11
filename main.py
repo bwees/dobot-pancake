@@ -121,7 +121,7 @@ class PAM:
         dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 108.8, -146.5, -26.8, 0, isQueued=1)[0]
         dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 150, -150, -27, 0, isQueued=1)[0]
         dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 108.8, -146.5, -26.8, 0, isQueued=1)[0]
-        
+
         return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 114.4, -91, 42.7, 0, isQueued=1)[0]
 
 class Feedrate:
@@ -280,11 +280,6 @@ def pamSpray(length):
         Wait(300),
         SetIO(17, 0)
     ])
-    
-def flipPancake():
-    dType.SetIODOEx(api, 13, 1)
-    time.sleep(1)
-    dType.SetIODOEx(api, 13, 0)
 
 def main():
 
@@ -302,12 +297,10 @@ def main():
 
     if "-h" in sys.argv:
         homeRobot()
-        print("DONE")
-
 
     if "-p" in sys.argv:
+        print("Spraying the PAM")
         executeQueue([PAM()])
-
 
     try:
         # grab last command line argument for filename
@@ -317,15 +310,18 @@ def main():
         print("Printing Pancake...")
         executeQueue(commands, plot=True)
 
-        executeQueue([UR3()])
-
         # Park robot out of way griddle
         executeQueue([Move(100-200, -150-25, 100)])
 
         print("Pancake Cook Time: 1.75 minutes")
-        time.sleep(60*1.75)
+        for i in tqdm(range(int(60*1.75))):
+            time.sleep(1)
 
-        flipPancake()
+        print("Pancake Done! Flipping Now...") 
+        executeQueue([UR3()])
+
+        # close all turtle windows
+        turtle.bye()
 
     except IndexError:
         print("Please provide a file to print!")
