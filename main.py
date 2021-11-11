@@ -17,7 +17,7 @@ state = dType.ConnectDobot(api, "COM4", 115200)[0]
 print("Connect status:", CON_STR[state])
 
 gcode_offset = [-43, 0, 0]
-griddle_home = [200, -25, 35]
+griddle_home = [150, -25, 35]
 
 class PancakePlot:
     def __init__(self, commands, x_offset=0, y_offset=0):
@@ -101,9 +101,28 @@ class Move:
 
     def execute(self):
         return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, self.x, self.y, self.z, 0, isQueued=1)[0]
-
+        
     def __repr__(self):
         return "<MOVE x=" + str(self.x) + " y=" + str(self.y) + ">"
+
+class UR3:
+    def execute(self):
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 114.4, -91, 42.7, 0, isQueued=1)[0]
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 114.4, -91, -30.7, 0, isQueued=1)[0]
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 138.2, -91, -29.3, 0, isQueued=1)[0]
+        dType.SetWAITCmd(api, 1000, isQueued=1)[0]
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 114.4, -91, -30.7, 0, isQueued=1)[0]
+
+        return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 114.4, -91, 42.7, 0, isQueued=1)[0]
+    
+class PAM:
+    def execute(self):
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 114.4, -91, 42.7, 0, isQueued=1)[0]
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 108.8, -146.5, -26.8, 0, isQueued=1)[0]
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 150, -150, -27, 0, isQueued=1)[0]
+        dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 108.8, -146.5, -26.8, 0, isQueued=1)[0]
+        
+        return dType.SetPTPCmd(api, dType.PTPMode.PTPMOVLXYZMode, 114.4, -91, 42.7, 0, isQueued=1)[0]
 
 class Feedrate:
     def __init__(self, feed):
@@ -140,7 +159,7 @@ class SetIO:
         self.level = level
 
     def execute(self):
-        dType.SetIODOEx(api, self.port, self.level, isQueued=1)
+        return dType.SetIODOEx(api, self.port, self.level, isQueued=1)[0]
 
     def __repr__(self):
         return "<SETIO port=" + str(self.port) + " level=" + + str(self.level) + ">"
@@ -258,16 +277,14 @@ def homeRobot():
 def pamSpray(length):
     executeQueue([
         SetIO(17, 1),
-        Wait(length),
+        Wait(300),
         SetIO(17, 0)
     ])
     
 def flipPancake():
-    executeQueue([
-        SetIO(13, 1),
-        Wait(1000),
-        SetIO(13, 0)
-    ])
+    dType.SetIODOEx(api, 13, 1)
+    time.sleep(1)
+    dType.SetIODOEx(api, 13, 0)
 
 def main():
 
@@ -285,9 +302,12 @@ def main():
 
     if "-h" in sys.argv:
         homeRobot()
+        print("DONE")
+
 
     if "-p" in sys.argv:
-        pamSpray(300)
+        executeQueue([PAM()])
+
 
     try:
         # grab last command line argument for filename
@@ -296,6 +316,8 @@ def main():
         # showPlot(commands)
         print("Printing Pancake...")
         executeQueue(commands, plot=True)
+
+        executeQueue([UR3()])
 
         # Park robot out of way griddle
         executeQueue([Move(100-200, -150-25, 100)])
