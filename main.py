@@ -29,7 +29,8 @@ class PancakePlot:
 
     def plot(self):
         turtle.tracer(0, 0)
-        turtle.color("green")
+        turtle.color("blue")
+        turtle.width(3)
         turtle.penup()
         
         for c in self.commands[:self.currentIndex]:
