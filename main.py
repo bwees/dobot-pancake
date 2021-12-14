@@ -275,13 +275,6 @@ def homeRobot():
     dType.SetQueuedCmdClear(api)
     print("Done Homing")
 
-def pamSpray(length):
-    executeQueue([
-        SetIO(17, 1),
-        Wait(300),
-        SetIO(17, 0)
-    ])
-
 def main():
 
     dType.ClearAllAlarmsState(api)
@@ -300,7 +293,7 @@ def main():
         homeRobot()
 
     if "-p" in sys.argv:
-        print("Spraying the PAM")
+        print("Spraying the PAM...")
         executeQueue([PAM()])
 
     try:
@@ -321,6 +314,9 @@ def main():
         print("Pancake Done! Flipping Now...") 
         executeQueue([UR3()])
 
+        # Park robot out of way griddle
+        executeQueue([Move(100-200, -150-25, 100)])
+        
         # close all turtle windows
         turtle.bye()
 
